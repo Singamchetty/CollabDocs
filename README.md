@@ -25,15 +25,25 @@ Domain logic is split into one Django app per area, mirroring the model groups i
 ## Prerequisites
 
 - Python 3.14+
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) — `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- [uv](https://docs.astral.sh/uv/getting-started/installation/):
+  - macOS/Linux: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+  - Windows (PowerShell): `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
 - Docker (any daemon works — Docker Desktop, Rancher Desktop, Colima, etc.) for Postgres via `docker compose`
 
 ## Setup
 
 1. Copy the environment template and adjust if needed:
 
+   macOS/Linux:
+
    ```bash
    cp .env.example .env
+   ```
+
+   Windows (PowerShell):
+
+   ```powershell
+   Copy-Item .env.example .env
    ```
 
 2. Start PostgreSQL:
@@ -44,9 +54,27 @@ Domain logic is split into one Django app per area, mirroring the model groups i
 
 3. Create a virtual environment and install dependencies with `uv`:
 
+   macOS/Linux:
+
    ```bash
    uv venv
    source .venv/bin/activate
+   uv pip install -r requirements.txt
+   ```
+
+   Windows (PowerShell):
+
+   ```powershell
+   uv venv
+   .venv\Scripts\Activate.ps1
+   uv pip install -r requirements.txt
+   ```
+
+   Windows (cmd.exe):
+
+   ```bat
+   uv venv
+   .venv\Scripts\activate.bat
    uv pip install -r requirements.txt
    ```
 
@@ -61,6 +89,8 @@ Domain logic is split into one Django app per area, mirroring the model groups i
    ```bash
    python manage.py runserver
    ```
+
+   Commands in steps 4–5 are the same on every OS once the virtual environment is activated.
 
 The API is served at `http://localhost:8000/api/`. A Postman collection covering all
 endpoints will be added to the repository root before submission.
