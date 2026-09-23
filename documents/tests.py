@@ -10,7 +10,8 @@ from config.exceptions import custom_exception_handler
 from users.models import User
 from workspaces.models import Workspace
 
-from .models import Document
+from .models import Document, DocumentVersion
+from .serializers import DocumentSerializer
 
 
 class DocumentAuditLogSignalTests(TestCase):
@@ -37,6 +38,36 @@ class DocumentAuditLogSignalTests(TestCase):
         logs = AuditLog.objects.filter(model_name="Document", object_id=str(document.id)).order_by("timestamp")
         self.assertEqual(logs.count(), 2)
         self.assertEqual(logs.last().action, "updated")
+
+
+class DocumentSerializerTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create(
+            first_name="Ada", last_name="Lovelace", email="ada2@example.com", phone="+10000000003"
+        )
+        self.workspace = Workspace.objects.create(name="Design", owner=self.user)
+
+    def test_blank_title_is_rejected(self):
+        serializer = DocumentSerializer(
+            data={
+                "title": "   ",
+                "content": "Body",
+                "workspace": self.workspace.id,
+                "status": Document.Status.DRAFT,
+            }
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("title", serializer.errors)
+
+    def test_tag_names_and_latest_version_number(self):
+        document = Document.objects.create(
+            title="Doc", content="Body", workspace=self.workspace, created_by=self.user
+        )
+        DocumentVersion.objects.create(document=document, content="v1", version_number=1)
+        DocumentVersion.objects.create(document=document, content="v2", version_number=2)
+        data = DocumentSerializer(document).data
+        self.assertEqual(data["latest_version_number"], 2)
+        self.assertEqual(data["tag_names"], [])
 
 
 class ExceptionHandlerTests(TestCase):
