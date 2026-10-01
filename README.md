@@ -98,6 +98,31 @@ endpoints will be added to the repository root before submission.
 You can also connect a database client (DBeaver, JDBC, `psql`, etc.) directly to
 Postgres using the `POSTGRES_*` values from `.env` — host `localhost`, port `5432`.
 
+## API endpoints
+
+There is no authentication in this project (per the brief), so callers identify users by
+passing IDs explicitly in the request body (`owner`, `created_by`, `saved_by`, `user_id`).
+Errors use `{"detail": ...}` or per-field messages with 400 (validation), 404 (not found)
+and 409 (conflict). Every request is logged to the console with method, path, status and time.
+
+| Method | Endpoint | Body / query | Notes |
+|---|---|---|---|
+| POST | `/api/users/` | `first_name`, `last_name`, `email`, `phone` | Email is lowercased and validated; email/phone must be unique |
+| GET | `/api/users/{id}/` | | |
+| POST | `/api/workspaces/` | `name`, `owner` (user id) | Owner is added as an `admin` member in the same transaction |
+| GET | `/api/workspaces/{id}/` | | Includes `member_count` |
+| POST | `/api/workspaces/{id}/members/` | `user_id`, `role` (`admin`/`editor`/`viewer`) | 404 unknown user, 409 already a member |
+| GET | `/api/workspaces/{id}/members/` | | Members with nested user data |
+| GET | `/api/workspaces/{id}/summary/` | | Document, member and total comment counts |
+| POST | `/api/documents/` | `title`, `content`, `workspace`, `created_by`, `status` | Creates the document and version 1 atomically |
+| PUT | `/api/documents/{id}/` | same as create, optional `saved_by` | Saves a new version atomically; `created_by` is ignored |
+| GET | `/api/documents/` | `workspace`, `status` (comma-separated), `tag`, `search` | `search` matches title or content; paginated |
+| GET | `/api/documents/{id}/versions/` | | Versions in order |
+| GET | `/api/documents/{id}/stats/` | | Version, comment and distinct contributor counts |
+| POST | `/api/documents/{id}/tags/` | `tags`: list of names | Creates missing tags; names are lowercased; idempotent |
+
+Comments, standalone tag creation and audit-log endpoints are not built yet.
+
 ## Running tests
 
 ```bash
