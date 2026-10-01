@@ -6,6 +6,8 @@ from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from comments.models import Comment
+from documents.models import Document
 from users.models import User
 
 from .models import Workspace, WorkspaceMember
@@ -164,3 +166,33 @@ class WorkspaceMembersApiTests(APITestCase):
         self.assertEqual(response.data[0]["role"], "admin")
         self.assertEqual(response.data[0]["user"]["email"], self.owner.email)
 
+
+class WorkspaceSummaryApiTests(APITestCase):
+    def test_summary_counts_documents_members_and_comments(self):
+        owner = make_user(1)
+        workspace = Workspace.objects.create(name="Ops", owner=owner)
+        WorkspaceMember.objects.create(workspace=workspace, user=owner, role=WorkspaceMember.Role.ADMIN)
+        WorkspaceMember.objects.create(workspace=workspace, user=make_user(2), role=WorkspaceMember.Role.VIEWER)
+        doc_a = Document.objects.create(title="A", content="a", workspace=workspace, created_by=owner)
+        doc_b = Document.objects.create(title="B", content="b", workspace=workspace, created_by=owner)
+        for _ in range(2):
+            Comment.objects.create(document=doc_a, author=owner, content="c")
+        Comment.objects.create(document=doc_b, author=owner, content="c")
+        response = self.client.get(f"/api/workspaces/{workspace.id}/summary/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["document_count"], 2)
+        self.assertEqual(response.data["member_count"], 2)
+        self.assertEqual(response.data["comment_count"], 3)
+
+    def test_summary_of_empty_workspace_is_all_zero(self):
+        workspace = Workspace.objects.create(name="Empty", owner=make_user(1))
+        response = self.client.get(f"/api/workspaces/{workspace.id}/summary/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            (response.data["document_count"], response.data["member_count"], response.data["comment_count"]),
+            (0, 0, 0),
+        )
+
+    def test_summary_of_unknown_workspace_returns_404(self):
+        response = self.client.get(f"/api/workspaces/{uuid.uuid4()}/summary/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

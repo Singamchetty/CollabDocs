@@ -52,3 +52,12 @@ class WorkspaceViewSet(viewsets.ModelViewSet):
             )
         return Response(WorkspaceMemberSerializer(member).data, status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=["get"])
+    def summary(self, request, pk=None):
+        workspace = self.get_object()
+        totals = Workspace.objects.filter(pk=workspace.pk).aggregate(
+            document_count=Count("documents", distinct=True),
+            member_count=Count("members", distinct=True),
+            comment_count=Count("documents__comments", distinct=True),
+        )
+        return Response({"workspace": workspace.id, **totals})
