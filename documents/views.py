@@ -6,8 +6,10 @@ from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from tags.models import Tag
+
 from .models import Document, DocumentVersion
-from .serializers import DocumentSerializer, DocumentVersionSerializer
+from .serializers import DocumentSerializer, DocumentTagsSerializer, DocumentVersionSerializer
 
 
 class DocumentViewSet(viewsets.ModelViewSet):
@@ -94,3 +96,14 @@ class DocumentViewSet(viewsets.ModelViewSet):
             contributor_count=Count("versions__saved_by", distinct=True),
         )
         return Response({"document": document.id, **totals})
+
+    @action(detail=True, methods=["post"])
+    def tags(self, request, pk=None):
+        document = self.get_object()
+        serializer = DocumentTagsSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            tags = [Tag.objects.get_or_create(name=name)[0] for name in serializer.validated_data["tags"]]
+            attached_ids = set(document.tags.values_list("id", flat=True))
+            document.tags.add(*[tag for tag in tags if tag.id not in attached_ids])
+        return Response(DocumentSerializer(document).data)

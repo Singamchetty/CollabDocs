@@ -50,3 +50,13 @@ class DocumentSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         validated_data.pop("created_by", None)
         return super().update(instance, validated_data)
+
+
+class DocumentTagsSerializer(serializers.Serializer):
+    tags = serializers.ListField(child=serializers.CharField(max_length=100, allow_blank=True), allow_empty=False)
+
+    def validate_tags(self, value):
+        names = list(dict.fromkeys(name.strip().lower() for name in value))
+        if any(not name for name in names):
+            raise serializers.ValidationError("Tag names cannot be blank.")
+        return names

@@ -333,3 +333,61 @@ class DocumentVersionsAndStatsApiTests(APITestCase):
             with self.subTest(suffix=suffix):
                 response = self.client.get(f"/api/documents/{uuid.uuid4()}/{suffix}/")
                 self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class DocumentTagsApiTests(APITestCase):
+    def setUp(self):
+        self.user = make_user(1)
+        self.workspace = Workspace.objects.create(name="Docs", owner=self.user)
+        self.document = Document.objects.create(
+            title="Spec", content="x", workspace=self.workspace, created_by=self.user
+        )
+        self.url = f"/api/documents/{self.document.id}/tags/"
+
+    def test_add_tags_creates_and_attaches_them(self):
+        response = self.client.post(self.url, {"tags": ["python", "django"]}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["tag_names"], ["django", "python"])
+        self.assertEqual(Tag.objects.count(), 2)
+        self.assertEqual(self.document.tags.count(), 2)
+
+    def test_names_are_normalized_and_deduplicated(self):
+        response = self.client.post(self.url, {"tags": ["Python", " python ", "DJANGO"]}, format="json")
+        self.assertEqual(response.data["tag_names"], ["django", "python"])
+        self.assertEqual(Tag.objects.count(), 2)
+
+    def test_existing_tags_are_reused_and_previous_tags_kept(self):
+        Tag.objects.create(name="django")
+        self.client.post(self.url, {"tags": ["python"]}, format="json")
+        response = self.client.post(self.url, {"tags": ["django"]}, format="json")
+        self.assertEqual(response.data["tag_names"], ["django", "python"])
+        self.assertEqual(Tag.objects.count(), 2)
+
+    def test_adding_the_same_tag_twice_is_idempotent(self):
+        self.client.post(self.url, {"tags": ["python"]}, format="json")
+        response = self.client.post(self.url, {"tags": ["python"]}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(self.document.tags.count(), 1)
+
+    def test_tagging_does_not_log_a_document_update(self):
+        before = AuditLog.objects.count()
+        self.client.post(self.url, {"tags": ["python"]}, format="json")
+        self.assertEqual(AuditLog.objects.count(), before)
+
+    def test_invalid_bodies_return_400(self):
+        bodies = [{}, {"tags": []}, {"tags": "python"}, {"tags": ["  "]}, {"tags": ["x" * 101]}]
+        for body in bodies:
+            with self.subTest(body=body):
+                response = self.client.post(self.url, body, format="json")
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                self.assertIn("tags", response.data)
+        self.assertEqual(Tag.objects.count(), 0)
+
+    def test_unknown_document_returns_404(self):
+        response = self.client.post(f"/api/documents/{uuid.uuid4()}/tags/", {"tags": ["a"]}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_tagged_document_is_found_by_tag_filter(self):
+        self.client.post(self.url, {"tags": ["python"]}, format="json")
+        response = self.client.get("/api/documents/?tag=python")
+        self.assertEqual([item["id"] for item in response.data["results"]], [str(self.document.id)])
