@@ -110,3 +110,57 @@ class WorkspaceApiTests(APITestCase):
     def test_get_unknown_workspace_returns_404(self):
         response = self.client.get(f"/api/workspaces/{uuid.uuid4()}/")
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class WorkspaceMembersApiTests(APITestCase):
+    def setUp(self):
+        self.owner = make_user(1)
+        self.workspace = Workspace.objects.create(name="Ops", owner=self.owner)
+        WorkspaceMember.objects.create(workspace=self.workspace, user=self.owner, role=WorkspaceMember.Role.ADMIN)
+        self.url = f"/api/workspaces/{self.workspace.id}/members/"
+
+    def test_add_member_with_role(self):
+        newcomer = make_user(2)
+        response = self.client.post(self.url, {"user_id": str(newcomer.id), "role": "editor"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["role"], "editor")
+        self.assertEqual(response.data["user"]["email"], newcomer.email)
+        self.assertTrue(
+            WorkspaceMember.objects.filter(workspace=self.workspace, user=newcomer, role="editor").exists()
+        )
+
+    def test_duplicate_member_returns_409(self):
+        response = self.client.post(self.url, {"user_id": str(self.owner.id), "role": "viewer"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(WorkspaceMember.objects.filter(workspace=self.workspace).count(), 1)
+
+    def test_unknown_user_returns_404(self):
+        response = self.client.post(self.url, {"user_id": str(uuid.uuid4()), "role": "viewer"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_invalid_role_returns_400(self):
+        response = self.client.post(self.url, {"user_id": str(make_user(2).id), "role": "owner"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("role", response.data)
+
+    def test_missing_fields_return_400(self):
+        response = self.client.post(self.url, {}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(set(response.data), {"user_id", "role"})
+
+    def test_unknown_workspace_returns_404(self):
+        response = self.client.get(f"/api/workspaces/{uuid.uuid4()}/members/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_list_members_with_roles_uses_constant_queries(self):
+        for n in range(2, 6):
+            WorkspaceMember.objects.create(
+                workspace=self.workspace, user=make_user(n), role=WorkspaceMember.Role.VIEWER
+            )
+        with self.assertNumQueries(2):
+            response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 5)
+        self.assertEqual(response.data[0]["role"], "admin")
+        self.assertEqual(response.data[0]["user"]["email"], self.owner.email)
+

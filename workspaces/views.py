@@ -1,10 +1,13 @@
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Count
 from rest_framework import status, viewsets
+from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from users.models import User
+
 from .models import Workspace, WorkspaceMember
-from .serializers import WorkspaceSerializer
+from .serializers import WorkspaceMemberSerializer, WorkspaceSerializer
 
 
 class WorkspaceViewSet(viewsets.ModelViewSet):
@@ -24,3 +27,28 @@ class WorkspaceViewSet(viewsets.ModelViewSet):
             )
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    @action(detail=True, methods=["get", "post"], url_path="members")
+    def members(self, request, pk=None):
+        workspace = self.get_object()
+        if request.method == "GET":
+            members = workspace.members.select_related("user").order_by("joined_at")
+            return Response(WorkspaceMemberSerializer(members, many=True).data)
+
+        serializer = WorkspaceMemberSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            user = User.objects.get(pk=serializer.validated_data["user_id"])
+        except User.DoesNotExist:
+            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            with transaction.atomic():
+                member = WorkspaceMember.objects.create(
+                    workspace=workspace, user=user, role=serializer.validated_data["role"]
+                )
+        except IntegrityError:
+            return Response(
+                {"detail": "User is already a member of this workspace."}, status=status.HTTP_409_CONFLICT
+            )
+        return Response(WorkspaceMemberSerializer(member).data, status=status.HTTP_201_CREATED)
+
