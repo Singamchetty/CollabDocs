@@ -270,7 +270,7 @@ class DocumentListApiTests(APITestCase):
                 self.assertIn(field, response.data)
 
     def test_list_includes_tags_and_latest_version(self):
-        response = self.client.get(f"/api/documents/?search=web")
+        response = self.client.get("/api/documents/?search=web")
         item = response.data["results"][0]
         self.assertEqual(item["tag_names"], ["django", "python"])
         self.assertEqual(item["latest_version_number"], 1)
@@ -281,4 +281,4 @@ class DocumentListApiTests(APITestCase):
         for n in range(10):
             self.make_doc(f"Extra {n}", "x", tags=[self.python_tag])
         with self.assertNumQueries(3):
-            self.client.get("/api/documents/?page_size=100")
+            self.client.get("/api/documents/")
