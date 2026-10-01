@@ -21,7 +21,15 @@ class WorkspaceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Workspace
         fields = ["id", "name", "owner", "is_active", "created_at", "member_count"]
-        read_only_fields = ["id", "owner", "created_at"]
+        read_only_fields = ["id", "created_at"]
 
     def get_member_count(self, obj):
+        if hasattr(obj, "member_count"):
+            return obj.member_count
         return obj.members.count()
+
+    def validate_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Workspace name cannot be blank.")
+        return value
