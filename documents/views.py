@@ -1,5 +1,8 @@
+import uuid
+
 from django.db import transaction
-from rest_framework import status, viewsets
+from django.db.models import Max, Q
+from rest_framework import serializers, status, viewsets
 from rest_framework.response import Response
 
 from .models import Document, DocumentVersion
@@ -11,7 +14,40 @@ class DocumentViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "post", "put", "head", "options"]
 
     def get_queryset(self):
-        return Document.objects.prefetch_related("tags").order_by("-updated_at", "id")
+        queryset = Document.objects.prefetch_related("tags").order_by("-updated_at", "id")
+        if self.action == "list":
+            queryset = self._apply_list_filters(queryset).annotate(latest_version=Max("versions__version_number"))
+        return queryset
+
+    def _apply_list_filters(self, queryset):
+        params = self.request.query_params
+
+        workspace = params.get("workspace")
+        if workspace:
+            try:
+                uuid.UUID(workspace)
+            except ValueError:
+                raise serializers.ValidationError({"workspace": "Must be a valid UUID."})
+            queryset = queryset.filter(workspace_id=workspace)
+
+        statuses = [value.strip() for value in params.get("status", "").split(",") if value.strip()]
+        if statuses:
+            invalid = [value for value in statuses if value not in Document.Status.values]
+            if invalid:
+                raise serializers.ValidationError(
+                    {"status": f"Invalid status {invalid}. Choose from {list(Document.Status.values)}."}
+                )
+            queryset = queryset.filter(status__in=statuses)
+
+        tag = params.get("tag", "").strip()
+        if tag:
+            queryset = queryset.filter(tags__name__iexact=tag)
+
+        search = params.get("search", "").strip()
+        if search:
+            queryset = queryset.filter(Q(title__icontains=search) | Q(content__icontains=search))
+
+        return queryset
 
     @staticmethod
     def _create_version(document, saved_by):

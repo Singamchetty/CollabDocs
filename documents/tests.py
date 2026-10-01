@@ -12,6 +12,7 @@ from rest_framework.test import APITestCase
 from audit_log.models import AuditLog
 from config.exceptions import custom_exception_handler
 from users.models import User
+from tags.models import Tag
 from workspaces.models import Workspace
 
 from .models import Document, DocumentVersion
@@ -203,3 +204,81 @@ class DocumentWriteApiTests(APITestCase):
         self.assertEqual(self.client.get(f"/api/documents/{document_id}/").status_code, 200)
         self.assertEqual(self.client.patch(f"/api/documents/{document_id}/", {}, format="json").status_code, 405)
         self.assertEqual(self.client.delete(f"/api/documents/{document_id}/").status_code, 405)
+
+
+class DocumentListApiTests(APITestCase):
+    def setUp(self):
+        self.user = make_user(1)
+        self.workspace = Workspace.objects.create(name="Docs", owner=self.user)
+        self.other_workspace = Workspace.objects.create(name="Other", owner=self.user)
+        self.python_tag = Tag.objects.create(name="python")
+        self.django_tag = Tag.objects.create(name="django")
+        self.draft = self.make_doc("Python basics", "intro to loops", status="draft", tags=[self.python_tag])
+        self.published = self.make_doc(
+            "Web guide", "uses Django views", status="published", tags=[self.python_tag, self.django_tag]
+        )
+        self.archived = self.make_doc("Old notes", "legacy", status="archived")
+        self.elsewhere = self.make_doc("Elsewhere", "other", workspace=self.other_workspace)
+
+    def make_doc(self, title, content, status="draft", workspace=None, tags=()):
+        document = Document.objects.create(
+            title=title, content=content, workspace=workspace or self.workspace, created_by=self.user, status=status
+        )
+        DocumentVersion.objects.create(document=document, content=content, version_number=1, saved_by=self.user)
+        for tag in tags:
+            tag.documents.add(document)
+        return document
+
+    def list_ids(self, query=""):
+        response = self.client.get(f"/api/documents/{query}")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        return {item["id"] for item in response.data["results"]}
+
+    def test_list_returns_all_documents_paginated(self):
+        response = self.client.get("/api/documents/")
+        self.assertEqual(response.data["count"], 4)
+        self.assertIn("results", response.data)
+
+    def test_filter_by_workspace(self):
+        self.assertEqual(self.list_ids(f"?workspace={self.other_workspace.id}"), {str(self.elsewhere.id)})
+
+    def test_filter_by_status_and_multiple_statuses(self):
+        self.assertEqual(self.list_ids("?status=published"), {str(self.published.id)})
+        self.assertEqual(
+            self.list_ids("?status=draft,archived&workspace=" + str(self.workspace.id)),
+            {str(self.draft.id), str(self.archived.id)},
+        )
+
+    def test_filter_by_tag_name_is_case_insensitive(self):
+        self.assertEqual(self.list_ids("?tag=Python"), {str(self.draft.id), str(self.published.id)})
+        self.assertEqual(self.list_ids("?tag=django"), {str(self.published.id)})
+        self.assertEqual(self.list_ids("?tag=nope"), set())
+
+    def test_search_matches_title_or_content_case_insensitively(self):
+        self.assertEqual(self.list_ids("?search=PYTHON"), {str(self.draft.id)})
+        self.assertEqual(self.list_ids("?search=django"), {str(self.published.id)})
+        self.assertEqual(self.list_ids("?search=zzz"), set())
+
+    def test_filters_combine(self):
+        self.assertEqual(self.list_ids("?tag=python&status=draft"), {str(self.draft.id)})
+
+    def test_invalid_filters_return_400(self):
+        for query, field in [("?workspace=nope", "workspace"), ("?status=frozen", "status")]:
+            with self.subTest(query=query):
+                response = self.client.get(f"/api/documents/{query}")
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                self.assertIn(field, response.data)
+
+    def test_list_includes_tags_and_latest_version(self):
+        response = self.client.get(f"/api/documents/?search=web")
+        item = response.data["results"][0]
+        self.assertEqual(item["tag_names"], ["django", "python"])
+        self.assertEqual(item["latest_version_number"], 1)
+
+    def test_list_query_count_does_not_grow_with_documents(self):
+        with self.assertNumQueries(3):
+            self.client.get("/api/documents/")
+        for n in range(10):
+            self.make_doc(f"Extra {n}", "x", tags=[self.python_tag])
+        with self.assertNumQueries(3):
+            self.client.get("/api/documents/?page_size=100")
