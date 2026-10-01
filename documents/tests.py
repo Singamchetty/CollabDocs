@@ -10,6 +10,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from audit_log.models import AuditLog
+from comments.models import Comment
 from config.exceptions import custom_exception_handler
 from users.models import User
 from tags.models import Tag
@@ -282,3 +283,53 @@ class DocumentListApiTests(APITestCase):
             self.make_doc(f"Extra {n}", "x", tags=[self.python_tag])
         with self.assertNumQueries(3):
             self.client.get("/api/documents/")
+
+
+class DocumentVersionsAndStatsApiTests(APITestCase):
+    def setUp(self):
+        self.author = make_user(1)
+        self.editor = make_user(2)
+        self.workspace = Workspace.objects.create(name="Docs", owner=self.author)
+        payload = {
+            "title": "Spec",
+            "content": "v1",
+            "workspace": str(self.workspace.id),
+            "created_by": str(self.author.id),
+        }
+        self.document_id = self.client.post("/api/documents/", payload, format="json").data["id"]
+        self.client.put(
+            f"/api/documents/{self.document_id}/", {**payload, "content": "v2", "saved_by": str(self.editor.id)}, format="json"
+        )
+        self.client.put(f"/api/documents/{self.document_id}/", {**payload, "content": "v3"}, format="json")
+
+    def test_versions_are_returned_in_order(self):
+        response = self.client.get(f"/api/documents/{self.document_id}/versions/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual([v["version_number"] for v in response.data], [1, 2, 3])
+        self.assertEqual([v["content"] for v in response.data], ["v1", "v2", "v3"])
+
+    def test_versions_only_include_this_document(self):
+        other = Document.objects.create(title="Other", content="x", workspace=self.workspace, created_by=self.author)
+        DocumentVersion.objects.create(document=other, content="x", version_number=1)
+        response = self.client.get(f"/api/documents/{self.document_id}/versions/")
+        self.assertEqual(len(response.data), 3)
+
+    def test_stats_counts_versions_comments_and_distinct_contributors(self):
+        document = Document.objects.get(id=self.document_id)
+        Comment.objects.create(document=document, author=self.author, content="a")
+        Comment.objects.create(document=document, author=self.editor, content="b")
+        response = self.client.get(f"/api/documents/{self.document_id}/stats/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["version_count"], 3)
+        self.assertEqual(response.data["comment_count"], 2)
+        self.assertEqual(response.data["contributor_count"], 2)
+
+    def test_stats_for_document_without_comments(self):
+        response = self.client.get(f"/api/documents/{self.document_id}/stats/")
+        self.assertEqual(response.data["comment_count"], 0)
+
+    def test_unknown_document_returns_404(self):
+        for suffix in ("versions", "stats"):
+            with self.subTest(suffix=suffix):
+                response = self.client.get(f"/api/documents/{uuid.uuid4()}/{suffix}/")
+                self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

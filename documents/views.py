@@ -1,12 +1,13 @@
 import uuid
 
 from django.db import transaction
-from django.db.models import Max, Q
+from django.db.models import Count, Max, Q
 from rest_framework import serializers, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from .models import Document, DocumentVersion
-from .serializers import DocumentSerializer
+from .serializers import DocumentSerializer, DocumentVersionSerializer
 
 
 class DocumentViewSet(viewsets.ModelViewSet):
@@ -77,3 +78,19 @@ class DocumentViewSet(viewsets.ModelViewSet):
             document = serializer.save()
             self._create_version(document, saved_by)
         return Response(serializer.data)
+
+    @action(detail=True, methods=["get"])
+    def versions(self, request, pk=None):
+        document = self.get_object()
+        versions = document.versions.order_by("version_number")
+        return Response(DocumentVersionSerializer(versions, many=True).data)
+
+    @action(detail=True, methods=["get"])
+    def stats(self, request, pk=None):
+        document = self.get_object()
+        totals = Document.objects.filter(pk=document.pk).aggregate(
+            version_count=Count("versions", distinct=True),
+            comment_count=Count("comments", distinct=True),
+            contributor_count=Count("versions__saved_by", distinct=True),
+        )
+        return Response({"document": document.id, **totals})
