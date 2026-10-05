@@ -3,9 +3,9 @@ services:
     image: postgres:16
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-collabdocs}
-      POSTGRES_USER: ${POSTGRES_USER:-collabdocs}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-collabdocs}
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:

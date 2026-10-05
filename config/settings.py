@@ -25,10 +25,10 @@ environ.Env.read_env(BASE_DIR / ".env")
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = env("DJANGO_SECRET_KEY", default="django-insecure-maonq*d_pbe46lj_vsdqv_i$rw(22(*+2y8ydl_(-kbenr!fwa")
+SECRET_KEY = env("DJANGO_SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = env.bool("DJANGO_DEBUG", default=True)
+DEBUG = env.bool("DJANGO_DEBUG", default=False)
 
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 
@@ -88,9 +88,9 @@ WSGI_APPLICATION = 'config.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': env("POSTGRES_DB", default="collabdocs"),
-        'USER': env("POSTGRES_USER", default="collabdocs"),
-        'PASSWORD': env("POSTGRES_PASSWORD", default="collabdocs"),
+        'NAME': env("POSTGRES_DB"),
+        'USER': env("POSTGRES_USER"),
+        'PASSWORD': env("POSTGRES_PASSWORD"),
         'HOST': env("POSTGRES_HOST", default="localhost"),
         'PORT': env("POSTGRES_PORT", default="5432"),
     }
