@@ -4,6 +4,7 @@ from .models import Tag
 
 
 class TagSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(max_length=100)
     document_count = serializers.SerializerMethodField()
 
     class Meta:
@@ -12,6 +13,8 @@ class TagSerializer(serializers.ModelSerializer):
         read_only_fields = ["id"]
 
     def get_document_count(self, obj):
+        if hasattr(obj, "document_count"):
+            return obj.document_count
         return obj.documents.count()
 
     def validate_name(self, value):
