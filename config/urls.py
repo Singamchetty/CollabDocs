@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
+from audit_log.views import AuditLogViewSet
 from comments.views import CommentViewSet
 from documents.views import DocumentViewSet
 from tags.views import TagViewSet
@@ -14,6 +15,7 @@ router.register("workspaces", WorkspaceViewSet, basename="workspace")
 router.register("documents", DocumentViewSet, basename="document")
 router.register("comments", CommentViewSet, basename="comment")
 router.register("tags", TagViewSet, basename="tag")
+router.register("audit-logs", AuditLogViewSet, basename="audit-log")
 
 urlpatterns = [
     path("admin/", admin.site.urls),
