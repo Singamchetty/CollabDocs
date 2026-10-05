@@ -132,6 +132,9 @@ and 409 (conflict). Every request is logged to the console with method, path, st
 python manage.py test
 ```
 
+See [TESTING.md](TESTING.md) for running part of the suite, running the Postman collection with
+`newman`, trying the error cases by hand, and the checks to show in the demo.
+
 ## Demo
 
 _Link to the demo video will be added before final submission._
