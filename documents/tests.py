@@ -401,3 +401,21 @@ class DocumentTagsApiTests(APITestCase):
         self.client.post(self.url, {"tags": ["python"]}, format="json")
         response = self.client.get("/api/documents/?tag=python")
         self.assertEqual([item["id"] for item in response.data["results"]], [str(self.document.id)])
+
+
+class ErrorShapeTests(APITestCase):
+    def test_query_param_errors_are_lists_like_serializer_errors(self):
+        responses = [
+            self.client.get("/api/documents/?status=frozen"),
+            self.client.get("/api/documents/?workspace=nope"),
+            self.client.get("/api/comments/"),
+            self.client.get("/api/comments/?document=nope"),
+            self.client.get("/api/audit-logs/?actor=nope"),
+            self.client.get("/api/audit-logs/?date_from=yesterday"),
+            self.client.get("/api/audit-logs/?date_from=2026-02-01&date_to=2026-01-01"),
+        ]
+        for response in responses:
+            with self.subTest(url=response.wsgi_request.get_full_path()):
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                (messages,) = response.data.values()
+                self.assertIsInstance(messages, list)

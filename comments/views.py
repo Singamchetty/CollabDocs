@@ -19,11 +19,11 @@ class CommentViewSet(viewsets.ModelViewSet):
     def list(self, request, *args, **kwargs):
         document_id = request.query_params.get("document")
         if not document_id:
-            raise serializers.ValidationError({"document": "This query parameter is required."})
+            raise serializers.ValidationError({"document": ["This query parameter is required."]})
         try:
             uuid.UUID(document_id)
         except ValueError:
-            raise serializers.ValidationError({"document": "Must be a valid UUID."})
+            raise serializers.ValidationError({"document": ["Must be a valid UUID."]})
         document = get_object_or_404(Document, pk=document_id)
 
         comments = list(

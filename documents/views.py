@@ -30,7 +30,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
             try:
                 uuid.UUID(workspace)
             except ValueError:
-                raise serializers.ValidationError({"workspace": "Must be a valid UUID."})
+                raise serializers.ValidationError({"workspace": ["Must be a valid UUID."]})
             queryset = queryset.filter(workspace_id=workspace)
 
         statuses = [value.strip() for value in params.get("status", "").split(",") if value.strip()]
@@ -38,7 +38,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
             invalid = [value for value in statuses if value not in Document.Status.values]
             if invalid:
                 raise serializers.ValidationError(
-                    {"status": f"Invalid status {invalid}. Choose from {list(Document.Status.values)}."}
+                    {"status": [f"Invalid status {invalid}. Choose from {list(Document.Status.values)}."]}
                 )
             queryset = queryset.filter(status__in=statuses)
 
