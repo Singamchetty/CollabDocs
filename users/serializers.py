@@ -28,3 +28,10 @@ class UserSerializer(serializers.ModelSerializer):
         if not PHONE_PATTERN.match(value):
             raise serializers.ValidationError("Phone must be 7-15 digits, optionally starting with '+'.")
         return value
+
+
+class UserSummarySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ["id", "first_name", "last_name"]
+        read_only_fields = fields
