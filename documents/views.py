@@ -77,6 +77,8 @@ class DocumentViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         saved_by = serializer.validated_data.pop("saved_by", None) or document.created_by
         with transaction.atomic():
+            # Serialize concurrent PUTs so two of them can't read the same versions.count().
+            Document.objects.select_for_update().get(pk=document.pk)
             document = serializer.save()
             self._create_version(document, saved_by)
         return Response(serializer.data)

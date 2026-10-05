@@ -4,8 +4,9 @@ from contextlib import redirect_stdout
 from unittest import mock
 
 from django.core.exceptions import ObjectDoesNotExist
-from django.db import IntegrityError
+from django.db import IntegrityError, connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -166,6 +167,15 @@ class DocumentWriteApiTests(APITestCase):
         self.assertEqual(versions[0].content, "v1 content")
         actions = list(AuditLog.objects.filter(object_id=document_id).order_by("timestamp").values_list("action", flat=True))
         self.assertEqual(actions, ["created", "updated"])
+
+    def test_put_locks_the_document_row_before_numbering_the_version(self):
+        document_id = self.client.post("/api/documents/", self.payload, format="json").data["id"]
+        with CaptureQueriesContext(connection) as queries:
+            self.client.put(f"/api/documents/{document_id}/", {**self.payload, "content": "v2"}, format="json")
+        statements = [q["sql"] for q in queries.captured_queries]
+        lock = next(i for i, sql in enumerate(statements) if "FOR UPDATE" in sql)
+        count = next(i for i, sql in enumerate(statements) if "COUNT" in sql and "documentversion" in sql)
+        self.assertLess(lock, count)
 
     def test_put_without_saved_by_attributes_version_to_creator(self):
         document_id = self.client.post("/api/documents/", self.payload, format="json").data["id"]
