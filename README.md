@@ -92,8 +92,9 @@ Domain logic is split into one Django app per area, mirroring the model groups i
 
    Commands in steps 4–5 are the same on every OS once the virtual environment is activated.
 
-The API is served at `http://localhost:8000/api/`. A Postman collection covering all
-endpoints will be added to the repository root before submission.
+The API is served at `http://localhost:8000/api/`. Import `CollabDocs.postman_collection.json`
+(repository root) into Postman and run its folders top to bottom, or use the Collection Runner:
+each request saves the ids the next ones need as collection variables.
 
 You can also connect a database client (DBeaver, JDBC, `psql`, etc.) directly to
 Postgres using the `POSTGRES_*` values from `.env` — host `localhost`, port `5432`.
@@ -120,8 +121,10 @@ and 409 (conflict). Every request is logged to the console with method, path, st
 | GET | `/api/documents/{id}/versions/` | | Versions in order |
 | GET | `/api/documents/{id}/stats/` | | Version, comment and distinct contributor counts |
 | POST | `/api/documents/{id}/tags/` | `tags`: list of names | Creates missing tags; names are lowercased; idempotent |
-
-Comments, standalone tag creation and audit-log endpoints are not built yet.
+| POST | `/api/comments/` | `document`, `author`, `content`, optional `parent` | Top-level comment or reply; a reply's parent must be on the same document |
+| GET | `/api/comments/?document={id}` | `document` (required) | Threaded: replies nested under their parent; 400 without `document`, 404 if unknown |
+| POST | `/api/tags/` | `name` | Trimmed and lowercased; 409 if the tag already exists |
+| GET | `/api/audit-logs/` | `actor` (user id), `date_from`, `date_to` | Entries written by the Document `post_save` signal, newest first; dates are ISO dates or datetimes and a bare `date_to` includes that whole day |
 
 ## Running tests
 
