@@ -1,6 +1,6 @@
 # Testing CollabDocs
 
-Three ways to check the project, from fastest to most hands-on:
+Three ways to check the project, from fastest to most hands-on, plus a fresh-checkout check at the end:
 
 1. **Automated tests** (`manage.py test`): models, constraints, transactions, signal, middleware, serializers and every endpoint.
 2. **Postman collection run** (`newman` or the Postman app): all 17 endpoints against a live server.
@@ -36,7 +36,7 @@ python manage.py test --failfast                 # stop at the first failure
 | `documents/test_model_relationships.py` | All 8 models: UUID primary keys, `TextChoices`, unique constraints, self-referential comment parent, tag many-to-many, cascade vs `SET_NULL` on delete, and that no model change is missing a migration |
 | `users/tests.py` | `POST /api/users/`, `GET /api/users/{id}/`: validation, duplicates, 404 |
 | `workspaces/tests.py` | Workspace create (owner becomes admin, rollback on failure), members (404 unknown user, 409 duplicate, fixed query count), summary aggregates, member unique constraint |
-| `documents/tests.py` | Document create/update with versions, atomic rollback of document + version + audit log, row lock on update, list filters (`workspace`, `status`, `tag`, `search`), versions, stats, tags, the `post_save` signal, the exception handler, the request-logging middleware |
+| `documents/tests.py` | Document create/update with versions, atomic rollback of document + version + audit log, row lock on update, list filters (`workspace`, `status`, `tag`, `search`), versions, stats, tags, the `post_save` signal, the exception handler, the request-logging middleware, and that bad query parameters return errors in the same shape as serializer errors |
 | `comments/tests.py` | Comments and replies, cross-document parent check, threaded listing with a fixed query count |
 | `tags/tests.py` | Tag creation, name normalisation, 409 on duplicates |
 | `audit_log/tests.py` | Actor and date-range filters, whole-day `date_to`, read-only behaviour |
@@ -80,7 +80,7 @@ An environment variable takes priority over `.env`, which is why this does not t
 npx newman run CollabDocs.postman_collection.json
 ```
 
-Expected result: 17 requests plus one helper request (the *Add Member* pre-request script creates its second user), with `0` in the `failed` column.
+Expected result: newman reports `18` requests (the 17 endpoints plus one helper request that the *Add Member* pre-request script sends to create its second user), `26` assertions, and `0` in the `failed` column.
 
 ### Step 3: clean up
 
@@ -94,16 +94,16 @@ On Windows PowerShell also run `Remove-Item Env:POSTGRES_DB` (or close the termi
 
 ### Trying the error cases by hand
 
-The collection runs the happy path. To see the error handling, edit a request in Postman and resend it:
+The collection runs the happy path. To see the error handling, edit a request in Postman and resend it. Note that *Create User* and *Create Tag* put `{{$timestamp}}` in their bodies, so every send is unique until you replace it with a fixed value.
 
 | Request | Change | Expected |
 |---|---|---|
 | Add Member | Send it twice | 409 (already a member) |
-| Add Member | Use a random uuid for `user_id` | 404 |
-| Create User | Send it twice with the same email | 400 |
-| Create Tag | Send the same name twice | 409 |
-| Add Comment | Set `parent` to a comment on a different document | 400 |
-| List Comments | Remove the `document` param | 400 |
+| Add Member | Set `user_id` to `00000000-0000-4000-8000-000000000000` | 404 (valid format, no such user) |
+| Create User | Replace `{{$timestamp}}` in the email and phone with fixed values, then send it twice | second send is 400 (email and phone already used) |
+| Create Tag | Replace `{{$timestamp}}` in the name with a fixed word, then send it twice | second send is 409 |
+| Add Comment | Create a second document with *Create Document*, then set this request's `document` to the new document's id while keeping `parent` | 400 (reply must stay on the parent's document) |
+| List Comments | Untick the `document` query param | 400 |
 | List Documents | Set `status=bogus` | 400 |
 | Get User | Use a uuid that does not exist | 404 |
 
@@ -111,7 +111,7 @@ The collection runs the happy path. To see the error handling, edit a request in
 
 **Middleware logs.** With `runserver` running, every request prints a line like `PUT /api/documents/<id>/ 200 41.20ms` (method, path, status, milliseconds) in the server console.
 
-**Audit log from the signal.** Create a document, update it with `PUT`, then call `GET /api/audit-logs/?actor=<user id>`. You should see one `created` and one `updated` entry for that document.
+**Audit log from the signal.** Create a document, update it with `PUT`, then call `GET /api/audit-logs/?actor=<user id>`. You should see one `created` and one `updated` entry for that document. The actor is the document's `created_by`, even if a different user saved the update.
 
 **Atomic transactions and rollback.** An API request cannot make a database write fail on demand, so the rollback is shown by the tests that force a failure partway through. Run them with `-v 2` and show the output:
 
@@ -124,27 +124,36 @@ python manage.py test -v 2 \
 
 The backslashes are macOS/Linux line continuations; on Windows put the whole command on one line.
 
-Each one makes the second step of a two-step save fail, then checks that the first step (document, workspace, and the audit-log row) was undone too.
+Each one simulates the failure by patching the second step of a two-step save to raise an error, then checks that the first step (the document or workspace, and the audit-log row) was undone too. Say that the failure is simulated if you show this in the demo.
 
 **Looking at the data.** Connect any database client (or `docker compose exec db psql -U collabdocs -d collabdocs`) to host `localhost`, port `5432`, with the values from `.env`.
 
 ## 4. Checking a fresh checkout
 
-To confirm the repository works from nothing, clone it to a new folder and run the README setup, then:
+To confirm the repository works from nothing, clone it to a new folder and run the README setup, but point it at an **empty** database. If you reuse a database that is already migrated, `migrate` will say "No migrations to apply" and prove nothing about migrating from scratch.
+
+macOS/Linux:
 
 ```bash
+docker compose exec -T db createdb -U collabdocs collabdocs_clean
+export POSTGRES_DB=collabdocs_clean
 python manage.py check
 python manage.py makemigrations --check --dry-run   # must print "No changes detected"
-python manage.py migrate
+python manage.py migrate                            # must apply every migration
 python manage.py test
 ```
+
+On Windows PowerShell use `$env:POSTGRES_DB = "collabdocs_clean"` instead of `export`. Afterwards drop it with `docker compose exec -T db dropdb -U collabdocs collabdocs_clean`.
 
 ## Troubleshooting
 
 | Symptom | Cause and fix |
 |---|---|
-| `connection refused` on port 5432 | Postgres is not running. Start your Docker daemon, then `docker compose up -d`. |
-| `ImproperlyConfigured: Set the DJANGO_SECRET_KEY environment variable` | No `.env` file. Run `cp .env.example .env` (Windows: `Copy-Item .env.example .env`). |
+| `Cannot connect to the Docker daemon` | Docker is not running. Start Docker Desktop, Rancher Desktop or Colima, then `docker compose up -d`. |
+| `Connection refused` on port 5432 | Postgres is not running. Run `docker compose up -d`. |
+| `password authentication failed` | The `POSTGRES_*` values in `.env` no longer match the database. Postgres only applies them the first time its volume is created, so editing `.env` later does not change the existing user. Put the old values back, or run `docker compose down -v` to delete the volume (this deletes the data in it) and start again. |
+| `ImproperlyConfigured: Set the DJANGO_SECRET_KEY environment variable` (or another variable name) | No `.env` file, or it lacks that variable. Run `cp .env.example .env` (Windows: `Copy-Item .env.example .env`). |
 | `permission denied to create database` | The `.env` database user cannot create the test database. Use the Docker Compose user. |
 | `database "test_..." already exists` | A previous run was interrupted. Answer `yes` to delete it, or run with `--noinput`. |
-| Port 8000 already in use | Stop the other server, or run `python manage.py runserver 8001` and set the Postman `base_url` to match. |
+| `Error: That port is already in use.` | Stop the other server, or run `python manage.py runserver 8001` and set the Postman `base_url` to match. |
+| `npx: command not found` | Node.js is not installed. Install it, or use the Postman app instead of `newman`. |
