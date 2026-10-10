@@ -113,7 +113,34 @@ The collection runs the happy path. To see the error handling, edit a request in
 
 **Audit log from the signal.** Create a document, update it with `PUT`, then call `GET /api/audit-logs/?actor=<user id>`. You should see one `created` and one `updated` entry for that document. The actor is the document's `created_by`, even if a different user saved the update.
 
-**Atomic transactions and rollback.** An API request cannot make a database write fail on demand, so the rollback is shown by the tests that force a failure partway through. Run them with `-v 2` and show the output:
+**Atomic transactions and rollback.** Creating a document is two steps in one transaction: save the document (which also writes an audit-log row through the signal), then save version 1. To show a rollback live, make the database reject the second step, send the request from Postman, and show that the first step was undone too. No code changes are needed.
+
+1. In your database client, run this against the database the server uses. It makes every insert into the versions table fail:
+
+   ```sql
+   CREATE FUNCTION demo_fail_version_insert() RETURNS trigger AS $$
+   BEGIN
+     RAISE EXCEPTION 'demo: version insert blocked';
+   END;
+   $$ LANGUAGE plpgsql;
+
+   CREATE TRIGGER demo_block_versions
+   BEFORE INSERT ON documents_documentversion
+   FOR EACH ROW EXECUTE FUNCTION demo_fail_version_insert();
+   ```
+
+2. In Postman, send *Create Document*. It returns **500**, because the version insert failed.
+3. Show that nothing was kept. In the client run `select count(*) from documents_document;` and `select count(*) from audit_log_auditlog;` (both unchanged), or call `GET /api/documents/` and `GET /api/audit-logs/`. The document row and its audit-log row had already been inserted when the failure happened, and were undone with it.
+4. Remove the trigger and send the same request again. It now returns **201** and creates the document, version 1 and the audit-log entry together:
+
+   ```sql
+   DROP TRIGGER demo_block_versions ON documents_documentversion;
+   DROP FUNCTION demo_fail_version_insert();
+   ```
+
+Do this on a throwaway database (section 2) if you can, and always run the `DROP` statements afterwards, or every later document create will fail.
+
+**Rollback without touching the database.** The test suite also covers this. Run these with `-v 2` and show the output:
 
 ```bash
 python manage.py test -v 2 \
