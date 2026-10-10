@@ -22,6 +22,9 @@ Domain logic is split into one Django app per area, mirroring the model groups i
 - `tags` — `Tag`
 - `audit_log` — `AuditLog`
 
+Each app owns its models, serializers, views, tests and `urls.py`. `config/urls.py` only includes the
+apps' URL files, so working inside an app never means editing `config/`.
+
 ## Prerequisites
 
 - Python 3.14+
