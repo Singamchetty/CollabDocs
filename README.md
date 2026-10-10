@@ -861,4 +861,4 @@ See [TESTING.md](TESTING.md) for running part of the suite, running the Postman 
 
 ## Demo
 
-_Link to the demo video will be added before final submission._
+[Watch the demo video](https://drive.google.com/file/d/1l_VHlaunW4qK5nC10vTYuacQcN0_E-Zq/view?usp=sharing) (Google Drive).
